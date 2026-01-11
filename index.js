@@ -76,8 +76,9 @@ ${output}`;
     );
     return result.trim();
   } catch (error) {
-    // If compression fails, return original
-    return null;
+    // Log error to help debug on other machines
+    console.error(`[compressed-shell] Compression failed: ${error.message}`);
+    return { error: error.message };
   }
 }
 
@@ -196,10 +197,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     writeFileSync(logFile, fullOutput);
 
     const compressed = await compressWithHaiku(fullOutput, command, result.exitCode);
-    if (compressed && compressed.length > 10) {
+    if (typeof compressed === 'string' && compressed.length > 10) {
       finalOutput = `[Compressed from ${lineCount} lines | Exit: ${result.exitCode} | Duration: ${result.duration}s]\n[Full output: ${logFile}]\n\n${compressed}`;
+    } else if (compressed && compressed.error) {
+      // Compression failed with error - show error to user
+      finalOutput = `[Compression failed: ${compressed.error}]\n[Full output: ${logFile}]\n\n${fullOutput}`;
     } else {
-      // Compression failed, use original
+      // Compression failed silently, use original
       finalOutput = fullOutput;
     }
   } else {
