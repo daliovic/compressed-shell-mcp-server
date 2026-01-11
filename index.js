@@ -15,6 +15,11 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { spawn, execSync } from "child_process";
+import { writeFileSync, mkdirSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
+
+const LOG_DIR = join(tmpdir(), "compressed-shell-logs");
 
 const MIN_LINES = 30;
 const TIMEOUT_SECONDS = 30;
@@ -184,9 +189,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   let finalOutput;
 
   if (shouldCompress) {
+    // Write full output to unique log file
+    mkdirSync(LOG_DIR, { recursive: true });
+    const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+    const logFile = join(LOG_DIR, `${timestamp}.log`);
+    writeFileSync(logFile, fullOutput);
+
     const compressed = await compressWithHaiku(fullOutput, command, result.exitCode);
     if (compressed && compressed.length > 10) {
-      finalOutput = `[Compressed from ${lineCount} lines | Exit: ${result.exitCode} | Duration: ${result.duration}s]\n\n${compressed}`;
+      finalOutput = `[Compressed from ${lineCount} lines | Exit: ${result.exitCode} | Duration: ${result.duration}s]\n[Full output: ${logFile}]\n\n${compressed}`;
     } else {
       // Compression failed, use original
       finalOutput = fullOutput;
