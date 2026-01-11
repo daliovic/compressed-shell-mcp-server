@@ -15,11 +15,27 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { spawn, execSync } from "child_process";
-import { writeFileSync, mkdirSync } from "fs";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 import { join } from "path";
-import { tmpdir } from "os";
+import { tmpdir, homedir } from "os";
 
 const LOG_DIR = join(tmpdir(), "compressed-shell-logs");
+
+// Find claude CLI - check common locations since MCP doesn't inherit shell config
+function findClaudeCli() {
+  const home = process.env.HOME || homedir();
+  const locations = [
+    join(home, ".local", "share", "claude", "versions", "2.0.64", "claude"),
+    join(home, ".local", "bin", "claude"),
+    "/usr/local/bin/claude",
+  ];
+  for (const loc of locations) {
+    if (existsSync(loc)) return loc;
+  }
+  return "claude"; // fallback to PATH
+}
+
+const CLAUDE_CLI = findClaudeCli();
 
 const MIN_LINES = 30;
 const TIMEOUT_SECONDS = 30;
@@ -67,7 +83,7 @@ ${output}`;
 
   try {
     const result = execSync(
-      `echo ${JSON.stringify(output)} | claude -p --model haiku --output-format text ${JSON.stringify(prompt)}`,
+      `echo ${JSON.stringify(output)} | ${CLAUDE_CLI} -p --model haiku --output-format text ${JSON.stringify(prompt)}`,
       {
         timeout: TIMEOUT_SECONDS * 1000,
         encoding: 'utf-8',
