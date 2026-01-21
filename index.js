@@ -25,7 +25,8 @@ const LOG_DIR = join(tmpdir(), "compressed-shell-logs");
 function findClaudeCli() {
   const home = process.env.HOME || homedir();
   const locations = [
-    join(home, ".local", "share", "claude", "versions", "2.0.64", "claude"),
+    // The executable IS the version file, not a 'claude' file inside a directory
+    join(home, ".local", "share", "claude", "versions", "2.0.64"),
     join(home, ".local", "bin", "claude"),
     "/usr/local/bin/claude",
   ];
@@ -44,12 +45,20 @@ const TIMEOUT_SECONDS = 30;
 const VERBOSE_COMMANDS = [
   "npm", "yarn", "pnpm", "pip", "apt", "apt-get", "brew",
   "docker", "docker-compose", "make", "cargo", "tsc",
-  "webpack", "vite", "eslint", "prettier"
+  "webpack", "vite", "eslint", "prettier", "npx",
 ];
 
 function isVerboseCommand(command) {
-  const firstWord = command.trim().split(/\s+/)[0];
-  return VERBOSE_COMMANDS.some(vc => firstWord === vc || firstWord.startsWith(vc + "-"));
+  // Split by shell operators to find all commands in a chain/pipe
+  const commands = command.split(/\s*(?:&&|\|\||;|\|)\s*/);
+
+  for (const cmd of commands) {
+    const firstWord = cmd.trim().split(/\s+/)[0];
+    if (VERBOSE_COMMANDS.some(vc => firstWord === vc || firstWord.startsWith(vc + "-"))) {
+      return true;
+    }
+  }
+  return false;
 }
 
 async function compressWithHaiku(output, command, exitCode) {
@@ -81,17 +90,31 @@ Compress this output:
 
 ${output}`;
 
+  // Write prompt to temp file to avoid E2BIG error with large outputs
+  const timestamp = Date.now();
+  const promptFile = join(LOG_DIR, `prompt-${timestamp}.txt`);
+
   try {
+    mkdirSync(LOG_DIR, { recursive: true });
+    writeFileSync(promptFile, prompt);
+
     const result = execSync(
-      `echo ${JSON.stringify(output)} | ${CLAUDE_CLI} -p --model haiku --output-format text ${JSON.stringify(prompt)}`,
+      `cat "${promptFile}" | ${CLAUDE_CLI} -p --model haiku --output-format text`,
       {
         timeout: TIMEOUT_SECONDS * 1000,
         encoding: 'utf-8',
         maxBuffer: 10 * 1024 * 1024
       }
     );
+
+    // Clean up temp file
+    try { require('fs').unlinkSync(promptFile); } catch {}
+
     return result.trim();
   } catch (error) {
+    // Clean up temp file on error too
+    try { require('fs').unlinkSync(promptFile); } catch {}
+
     // Log error to help debug on other machines
     console.error(`[compressed-shell] Compression failed: ${error.message}`);
     return { error: error.message };
