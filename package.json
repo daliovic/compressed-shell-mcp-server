@@ -31,8 +31,7 @@
   },
   "homepage": "https://github.com/daliovic/compressed-shell-mcp-server#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "lodash": "^4.17.23"
+    "@modelcontextprotocol/sdk": "^1.0.0"
   },
   "engines": {
     "node": ">=14.0.0"

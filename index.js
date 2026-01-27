@@ -220,26 +220,60 @@ function addAllowOnce(command) {
 // Check if command is allowed in project settings
 // Note: Only checks command-specific patterns, NOT the blanket "mcp__compressed-shell__shell" permission
 // (the blanket permission is for Claude Code, our internal logic needs specific patterns)
+function getCommandPrefix(command) {
+  const words = command.trim().split(/\s+/);
+  // Use first two words for subcommand (e.g., "npm install", "docker build")
+  // Fall back to first word only if no subcommand
+  return words.length >= 2 ? `${words[0]} ${words[1]}` : words[0];
+}
+
 function isCommandAllowed(command, cwd) {
   const projectDir = cwd || process.cwd();
   const settingsFile = join(projectDir, ".claude", "settings.local.json");
 
-  if (!existsSync(settingsFile)) return false;
+  debugLog(`isCommandAllowed: checking "${command}" in ${settingsFile}`);
+
+  if (!existsSync(settingsFile)) {
+    debugLog(`Settings file not found: ${settingsFile}`);
+    return false;
+  }
 
   try {
     const settings = JSON.parse(readFileSync(settingsFile, "utf-8"));
     const allowList = settings?.permissions?.allow || [];
     const firstWord = command.trim().split(/\s+/)[0];
+    const subcommandPrefix = getCommandPrefix(command);
+
+    debugLog(`Checking ${allowList.length} rules for command="${command}"`);
 
     for (const rule of allowList) {
       // Only match command-specific patterns, not blanket permissions
       if (rule === `mcp__compressed-shell__shell(command:${command})`)
         return true;
+      // Match subcommand pattern (e.g., "npm install *")
+      if (rule === `mcp__compressed-shell__shell(command:${subcommandPrefix} *)`)
+        return true;
+      // Also still match first-word-only pattern for backwards compatibility
       if (rule === `mcp__compressed-shell__shell(command:${firstWord} *)`)
         return true;
       // DO NOT match 'mcp__compressed-shell__shell' - that's for Claude Code level
+
+      // Check existing Bash permissions (e.g., "Bash(npm install:*)")
+      // This honors permissions already granted at Claude Code level
+      const bashMatch = rule.match(/^Bash\((.+?):\*\)$/);
+      if (bashMatch) {
+        const bashPrefix = bashMatch[1];
+        debugLog(`Bash rule found: "${rule}" -> prefix="${bashPrefix}"`);
+        if (command === bashPrefix || command.startsWith(bashPrefix + " ")) {
+          debugLog(`MATCH! command="${command}" starts with "${bashPrefix} "`);
+          return true;
+        }
+      }
     }
-  } catch (e) {}
+    debugLog(`No matching rules found`);
+  } catch (e) {
+    debugLog(`Error reading settings: ${e.message}`);
+  }
   return false;
 }
 
@@ -405,9 +439,10 @@ Commands like npm, docker, apt, etc. will have output compressed if >30 lines.`,
       {
         name: "allow_command",
         description: `Add a command PREFIX to the project's allowed list (.claude/settings.local.json).
-Use when user wants to ALWAYS allow a type of command (e.g., all npm commands).
+⚠️ Use when user wants to ALWAYS allow a type of command.
 
-Example: allow_command(command_prefix: "npm") allows ALL npm commands permanently.`,
+Example: allow_command(command_prefix: "npm install") allows ALL "npm install" commands permanently.
+Example: allow_command(command_prefix: "npm run") allows ALL "npm run" commands permanently.`,
         inputSchema: {
           type: "object",
           properties: {
@@ -500,7 +535,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       content: [
         {
           type: "text",
-          text: `⚠️ PERMANENTLY ALLOWED: ${result.permission}\n\nAll ${command_prefix} commands are now allowed in this project.\nYou can now retry the command.`,
+          text: `⚠️ PERMANENTLY ALLOWED: ${result.permission}\n\nAll "${command_prefix}" commands are now allowed in this project.\nYou can now retry the command.`,
         },
       ],
     };
@@ -522,7 +557,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   );
 
   if (!safe && !allowedOnce && !allowedAlways) {
-    const firstWord = command.trim().split(/\s+/)[0];
+    const subcommandPrefix = getCommandPrefix(command);
     debugLog(`DENIED - returning error for: ${command}`);
     return {
       content: [
@@ -535,8 +570,8 @@ Ask the user if they want to allow this command. DEFAULT to "once" unless user e
 To allow ONCE (recommended):
   allow_once(command: "${command}")
 
-To allow ALWAYS (⚠️ will permanently allow ALL ${firstWord} commands in this project):
-  allow_command(command_prefix: "${firstWord}")
+To allow ALWAYS (⚠️ will permanently allow ALL "${subcommandPrefix}" commands in this project):
+  allow_command(command_prefix: "${subcommandPrefix}")
 
 Then retry the original command.`,
         },
