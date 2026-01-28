@@ -1,11 +1,11 @@
 {
   "name": "compressed-shell-mcp-server",
-  "version": "1.0.0",
-  "description": "MCP server for shell commands with automatic output compression using Claude Haiku",
+  "version": "1.1.0",
+  "description": "MCP server for shell commands with automatic output compression and granular permissions",
   "type": "module",
   "main": "index.js",
   "bin": {
-    "compressed-shell-mcp": "./index.js"
+    "compressed-shell-mcp-server": "./index.js"
   },
   "scripts": {
     "start": "node index.js"
@@ -18,7 +18,9 @@
     "claude",
     "ai",
     "terminal",
-    "output-compression"
+    "output-compression",
+    "permissions",
+    "claude-code"
   ],
   "author": "Daliovic",
   "license": "MIT",
@@ -31,8 +33,7 @@
   },
   "homepage": "https://github.com/daliovic/compressed-shell-mcp-server#readme",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
-    "lodash": "^4.17.23"
+    "@modelcontextprotocol/sdk": "^1.0.0"
   },
   "engines": {
     "node": ">=14.0.0"

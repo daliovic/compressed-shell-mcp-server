@@ -2,6 +2,14 @@
 
 An MCP (Model Context Protocol) server that executes shell commands with automatic output compression for verbose commands like npm, docker, apt, make, and more.
 
+## Features
+
+- **Output Compression**: Automatically compresses verbose output (50-200+ lines) to ~15 lines using Claude Haiku
+- **Permission System**: Granular command permissions with safe commands auto-allowed
+- **Subcommand Permissions**: Allow specific subcommands like `npm install` without allowing all npm commands
+- **One-time Permissions**: Allow commands once without permanent permission
+- **Bash Permission Integration**: Honors existing Bash permissions from Claude Code settings
+
 ## The Problem
 
 Terminal commands like `npm install`, `docker build`, `apt install`, etc. produce 50-200+ lines of output that:
@@ -12,9 +20,10 @@ Terminal commands like `npm install`, `docker build`, `apt install`, etc. produc
 ## Solution
 
 This MCP server:
-1. Runs the command and captures output
-2. If output > 30 lines AND command is a verbose type, sends to Claude Haiku for compression
-3. Returns compressed summary preserving: errors, exit codes, file paths, counts, timing
+1. Checks command permissions (safe commands auto-allowed)
+2. Runs the command and captures output
+3. If output > 30 lines AND command is verbose type, compresses with Claude Haiku
+4. Returns compressed summary preserving: errors, exit codes, file paths, counts, timing
 
 ## Results
 
@@ -44,35 +53,86 @@ npm install
 
 ```bash
 # If installed globally
-claude mcp add compressed-shell npx compressed-shell-mcp --scope user
+claude mcp add compressed-shell -- npx compressed-shell-mcp-server --scope user
 
 # If installed locally
-claude mcp add compressed-shell node /path/to/compressed-shell-mcp-server/index.js --scope user
+claude mcp add compressed-shell -- node /path/to/compressed-shell-mcp-server/index.js --scope user
 ```
 
-## Usage
+## Tools
 
-The server provides a `shell` tool that can be used instead of regular Bash commands:
+### `shell` - Execute commands
 
-### Parameters
+Execute shell commands with automatic compression.
+
+**Parameters:**
 - `command` (required): Shell command to execute
 - `cwd` (optional): Working directory
 - `compress` (optional): Force compression even for non-verbose commands
 
+### `allow_once` - One-time permission
+
+Allow a specific command to run once. Permission is consumed after execution.
+
+```
+allow_once(command: "npm install lodash")
+```
+
+### `allow_command` - Permanent permission
+
+Add a command prefix to the project's allowed list (`.claude/settings.local.json`).
+
+```
+allow_command(command_prefix: "npm install")  # Allows all "npm install" commands
+allow_command(command_prefix: "npm run")      # Allows all "npm run" commands
+```
+
+## Permission System
+
+### Safe Commands (Auto-Allowed)
+
+These read-only commands run without prompting:
+- File operations: `ls`, `pwd`, `cat`, `head`, `tail`, `find`, `tree`
+- Text processing: `grep`, `awk`, `sed`, `sort`, `uniq`, `wc`
+- Git (read-only): `git status`, `git log`, `git branch`, `git diff`
+- System info: `whoami`, `hostname`, `uname`, `date`, `env`
+- Network (read-only): `ping`, `curl`, `wget`, `dig`
+- Version checks: `node --version`, `npm --version`, etc.
+
+### Permission Flow
+
+1. **Safe command?** → Auto-allowed
+2. **One-time permission?** → Allowed (permission consumed)
+3. **In project settings?** → Allowed
+4. **Has matching Bash permission?** → Allowed (e.g., `Bash(npm install:*)`)
+5. **Otherwise** → Denied with prompt to allow
+
+### Bash Permission Integration
+
+If you have existing Bash permissions in your settings:
+```json
+{
+  "permissions": {
+    "allow": ["Bash(npm install:*)", "Bash(pnpm exec tsc:*)"]
+  }
+}
+```
+
+These are automatically honored - no double prompting!
+
+## Compression
+
 ### Verbose Commands Auto-Detected
 
-The following commands automatically trigger compression when output exceeds 30 lines:
-- npm, yarn, pnpm
-- pip
-- apt, apt-get, brew
-- docker, docker-compose
-- make, cargo
-- tsc, webpack, vite
-- eslint, prettier
+Commands that trigger compression when output exceeds 30 lines:
+- Package managers: `npm`, `yarn`, `pnpm`, `pip`
+- System packages: `apt`, `apt-get`, `brew`
+- Containers: `docker`, `docker-compose`
+- Build tools: `make`, `cargo`, `tsc`, `webpack`, `vite`
+- Linters: `eslint`, `prettier`
 
 ### What Gets Preserved
 
-The compression intelligently preserves:
 - ALL errors and warnings
 - Exit codes and final status
 - File paths created/modified/deleted
@@ -113,6 +173,22 @@ SUCCESS: Docker build completed
 - 18 layers processed
 - Final size: 1.2GB
 - Duration: 45.2s
+```
+
+## Project Structure
+
+```
+compressed-shell-mcp-server/
+├── index.js              # Entry point
+├── lib/
+│   ├── constants.js      # Config, safe/verbose command lists
+│   ├── permissions.js    # Permission checking logic
+│   ├── compression.js    # Haiku compression
+│   └── execution.js      # Command execution
+└── tools/
+    ├── shell.js          # Shell tool handler
+    ├── allow-once.js     # One-time permission handler
+    └── allow-command.js  # Permanent permission handler
 ```
 
 ## Requirements
