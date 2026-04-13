@@ -65,6 +65,7 @@ To allow ONCE (recommended):
   allow_once(command: "${command}")
 
 To allow ALWAYS (will permanently allow ALL "${subcommandPrefix}" commands in this project):
+only use this when explicitly requested by the user
   allow_command(command_prefix: "${subcommandPrefix}")
 
 Then retry the original command.`,
